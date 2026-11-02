@@ -125,6 +125,8 @@ panic(char *s)
 
 //PAGEBREAK: 50
 #define BACKSPACE 0x100
+#define CURSOR_LEFT 0x101
+#define HIGHLIGHT 0x200
 #define CRTPORT 0x3d4
 static ushort *crt = (ushort*)P2V(0xb8000);  // CGA memory
 
@@ -141,9 +143,11 @@ cgaputc(int c)
 
   if(c == '\n')
     pos += 80 - pos%80;
-  else if(c == BACKSPACE){
+  else if(c == BACKSPACE || c == CURSOR_LEFT){
     if(pos > 0) --pos;
-  } else
+  } else if(c & HIGHLIGHT)
+    crt[pos++] = (c&0xff) | 0x7000;
+  else
     crt[pos++] = (c&0xff) | 0x0700;  // black on white
 
   if(pos < 0 || pos > 25*80)
@@ -159,7 +163,8 @@ cgaputc(int c)
   outb(CRTPORT+1, pos>>8);
   outb(CRTPORT, 15);
   outb(CRTPORT+1, pos);
-  crt[pos] = ' ' | 0x0700;
+  if(c != CURSOR_LEFT)
+    crt[pos] = ' ' | 0x0700;
 }
 
 void
@@ -173,8 +178,10 @@ consputc(int c)
 
   if(c == BACKSPACE){
     uartputc('\b'); uartputc(' '); uartputc('\b');
-  } else
-    uartputc(c);
+  } else if(c == CURSOR_LEFT)
+    uartputc('\b');
+  else
+    uartputc(c & 0xff);
   cgaputc(c);
 }
 
@@ -184,47 +191,241 @@ struct {
   uint r;  // Read index
   uint w;  // Write index
   uint e;  // Edit index
+  uint cur;
 } input;
 
 #define C(x)  ((x)-'@')  // Control-x
+#define KEY_LEFT 0xE4
+#define KEY_RIGHT 0xE5
+
+#define SEL_NONE 0
+#define SEL_MARKING 1
+#define SEL_DONE 2
+
+static int selstate = SEL_NONE;
+static uint selstart, selend;
+static char clipboard[INPUT_BUF];
+static int cliplen;
+static uint shownlen;
+
+static int
+isselected(uint i)
+{
+  uint from = selstart;
+  uint to = selend;
+
+  if(selstate == SEL_NONE)
+    return 0;
+  if(from > to){
+    from = selend;
+    to = selstart;
+  }
+  return i >= from && i < to;
+}
+
+static void
+redraw(uint oldcur)
+{
+  uint i;
+  uint pos = oldcur;
+
+  while(pos > input.w){
+    consputc(CURSOR_LEFT);
+    pos--;
+  }
+  for(i = input.w; i < input.e; i++){
+    if(isselected(i))
+      consputc(input.buf[i % INPUT_BUF] | HIGHLIGHT);
+    else
+      consputc(input.buf[i % INPUT_BUF]);
+    pos++;
+  }
+  while(pos < input.w + shownlen){
+    consputc(' ');
+    pos++;
+  }
+  while(pos > input.cur){
+    consputc(CURSOR_LEFT);
+    pos--;
+  }
+  shownlen = input.e - input.w;
+}
+
+static void
+deletechars(uint from, uint to)
+{
+  uint i;
+  uint n = to - from;
+
+  for(i = to; i < input.e; i++)
+    input.buf[(i - n) % INPUT_BUF] = input.buf[i % INPUT_BUF];
+  input.e -= n;
+  input.cur = from;
+}
+
+static void
+insertchar(char c)
+{
+  uint i;
+
+  if(input.e - input.r >= INPUT_BUF - 1)
+    return;
+  for(i = input.e; i > input.cur; i--)
+    input.buf[i % INPUT_BUF] = input.buf[(i - 1) % INPUT_BUF];
+  input.buf[input.cur % INPUT_BUF] = c;
+  input.cur++;
+  input.e++;
+}
+
+static void
+deleteselection(void)
+{
+  if(selstate == SEL_DONE)
+    deletechars(selstart, selend);
+  selstate = SEL_NONE;
+}
+
+static void
+movecursor(uint newpos)
+{
+  input.cur = newpos;
+  if(selstate == SEL_MARKING)
+    selend = newpos;
+  else
+    selstate = SEL_NONE;
+}
+
+static void
+selectkey(void)
+{
+  uint tmp;
+
+  if(selstate != SEL_MARKING){
+    selstate = SEL_MARKING;
+    selstart = input.cur;
+    selend = input.cur;
+  } else if(selstart == selend){
+    selstate = SEL_NONE;
+  } else {
+    if(selstart > selend){
+      tmp = selstart;
+      selstart = selend;
+      selend = tmp;
+    }
+    selstate = SEL_DONE;
+  }
+}
+
+static void
+copyselection(void)
+{
+  uint i;
+
+  if(selstate != SEL_DONE)
+    return;
+  cliplen = 0;
+  for(i = selstart; i < selend; i++){
+    clipboard[cliplen] = input.buf[i % INPUT_BUF];
+    cliplen++;
+  }
+}
+
+static void
+paste(void)
+{
+  int i;
+
+  if(cliplen == 0)
+    return;
+  deleteselection();
+  for(i = 0; i < cliplen; i++)
+    insertchar(clipboard[i]);
+}
+
+static void
+submitline(int c, uint oldcur)
+{
+  if(input.e - input.r >= INPUT_BUF)
+    return;
+  if(c == '\r')
+    c = '\n';
+  selstate = SEL_NONE;
+  input.buf[input.e % INPUT_BUF] = c;
+  input.e++;
+  input.cur = input.e;
+  redraw(oldcur);
+  input.w = input.e;
+  shownlen = 0;
+  wakeup(&input.r);
+}
+
+static int
+ismovekey(int c)
+{
+  return c == KEY_LEFT || c == KEY_RIGHT || c == C('Q') || c == C('E');
+}
 
 void
 consoleintr(int (*getc)(void))
 {
   int c, doprocdump = 0;
+  uint oldcur;
 
   acquire(&cons.lock);
   while((c = getc()) >= 0){
+    oldcur = input.cur;
+    if(c == '\r' || c == '\n' || c == C('D')){
+      submitline(c, oldcur);
+      continue;
+    }
+    if(selstate == SEL_MARKING && !ismovekey(c) && c != C('I'))
+      continue;
     switch(c){
     case C('P'):  // Process listing.
       // procdump() locks cons.lock indirectly; invoke later
       doprocdump = 1;
       break;
     case C('U'):  // Kill line.
-      while(input.e != input.w &&
-            input.buf[(input.e-1) % INPUT_BUF] != '\n'){
-        input.e--;
-        consputc(BACKSPACE);
-      }
+      selstate = SEL_NONE;
+      deletechars(input.w, input.e);
+      break;
+    case KEY_LEFT:
+      if(input.cur > input.w)
+        movecursor(input.cur - 1);
+      break;
+    case KEY_RIGHT:
+      if(input.cur < input.e)
+        movecursor(input.cur + 1);
+      break;
+    case C('Q'):
+      movecursor(input.w);
+      break;
+    case C('E'):
+      movecursor(input.e);
+      break;
+    case C('I'):
+      selectkey();
+      break;
+    case C('C'):
+      copyselection();
+      break;
+    case C('V'):
+      paste();
       break;
     case C('H'): case '\x7f':  // Backspace
-      if(input.e != input.w){
-        input.e--;
-        consputc(BACKSPACE);
-      }
+      if(selstate == SEL_DONE)
+        deleteselection();
+      else if(input.cur > input.w)
+        deletechars(input.cur - 1, input.cur);
       break;
     default:
-      if(c != 0 && input.e-input.r < INPUT_BUF){
-        c = (c == '\r') ? '\n' : c;
-        input.buf[input.e++ % INPUT_BUF] = c;
-        consputc(c);
-        if(c == '\n' || c == C('D') || input.e == input.r+INPUT_BUF){
-          input.w = input.e;
-          wakeup(&input.r);
-        }
+      if(c >= ' ' && c < 0x7f){
+        deleteselection();
+        insertchar(c);
       }
       break;
     }
+    redraw(oldcur);
   }
   release(&cons.lock);
   if(doprocdump) {
