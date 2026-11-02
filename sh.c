@@ -142,11 +142,172 @@ getcmd(char *buf, int nbuf)
   return 0;
 }
 
+#define LINESIZE 100
+#define HISTSIZE 10
+#define MAXALIAS 16
+
+char history[HISTSIZE][LINESIZE];
+int histcount;
+
+char aliasname[MAXALIAS][LINESIZE];
+char aliascmd[MAXALIAS][LINESIZE];
+int aliascount;
+
+int
+startswith(char *s, char *prefix)
+{
+  while(*prefix != 0){
+    if(*s != *prefix)
+      return 0;
+    s++;
+    prefix++;
+  }
+  return 1;
+}
+
+void
+getfirstword(char *line, char *word)
+{
+  int i = 0;
+
+  while(line[i] != 0 && line[i] != ' '){
+    word[i] = line[i];
+    i++;
+  }
+  word[i] = 0;
+}
+
+void
+replacefirstword(char *line, char *newword)
+{
+  char word[LINESIZE];
+  char result[LINESIZE];
+  char *rest;
+
+  getfirstword(line, word);
+  rest = line + strlen(word);
+  if(strlen(newword) + strlen(rest) >= LINESIZE)
+    return;
+  strcpy(result, newword);
+  strcpy(result + strlen(newword), rest);
+  strcpy(line, result);
+}
+
+char*
+gethistory(int n)
+{
+  if(n < 1 || n > histcount || n <= histcount - HISTSIZE)
+    return 0;
+  return history[(n - 1) % HISTSIZE];
+}
+
+void
+addhistory(char *line)
+{
+  strcpy(history[histcount % HISTSIZE], line);
+  histcount++;
+}
+
+void
+printhistory(void)
+{
+  int i;
+  int first = histcount - HISTSIZE + 1;
+
+  if(first < 1)
+    first = 1;
+  for(i = first; i <= histcount; i++)
+    printf(1, "%d. %s\n", i, gethistory(i));
+}
+
+int
+expandhistory(char *line)
+{
+  char word[LINESIZE];
+  char *found = 0;
+  int i;
+
+  getfirstword(line, word);
+  if(word[0] != '!' || word[1] == 0)
+    return 0;
+
+  if(strcmp(word, "!!") == 0){
+    found = gethistory(histcount);
+  } else if(word[1] >= '0' && word[1] <= '9'){
+    found = gethistory(atoi(word + 1));
+  } else {
+    for(i = histcount; gethistory(i) != 0; i--){
+      if(startswith(gethistory(i), word + 1)){
+        found = gethistory(i);
+        break;
+      }
+    }
+  }
+
+  if(found == 0){
+    printf(2, "sh: event not found\n");
+    return -1;
+  }
+  replacefirstword(line, found);
+  printf(1, "%s\n", line);
+  return 0;
+}
+
+int
+findalias(char *name)
+{
+  int i;
+
+  for(i = 0; i < aliascount; i++){
+    if(strcmp(aliasname[i], name) == 0)
+      return i;
+  }
+  return -1;
+}
+
+void
+definealias(char *def)
+{
+  char *eq;
+  int i;
+
+  eq = strchr(def, '=');
+  if(eq == 0){
+    printf(2, "usage: alias name=command\n");
+    return;
+  }
+  *eq = 0;
+
+  i = findalias(def);
+  if(i < 0){
+    if(aliascount == MAXALIAS){
+      printf(2, "sh: too many aliases\n");
+      return;
+    }
+    i = aliascount;
+    aliascount++;
+  }
+  strcpy(aliasname[i], def);
+  strcpy(aliascmd[i], eq + 1);
+}
+
+void
+expandalias(char *line)
+{
+  char word[LINESIZE];
+  int i;
+
+  getfirstword(line, word);
+  i = findalias(word);
+  if(i >= 0)
+    replacefirstword(line, aliascmd[i]);
+}
+
 int
 main(void)
 {
-  static char buf[100];
-  int fd;
+  static char buf[LINESIZE];
+  int fd, len;
 
   // Ensure that three file descriptors are open.
   while((fd = open("console", O_RDWR)) >= 0){
@@ -158,9 +319,25 @@ main(void)
 
   // Read and run input commands.
   while(getcmd(buf, sizeof(buf)) >= 0){
+    len = strlen(buf);
+    if(len > 0 && buf[len - 1] == '\n')
+      buf[len - 1] = 0;
+    if(buf[0] == 0)
+      continue;
+    if(expandhistory(buf) < 0)
+      continue;
+    addhistory(buf);
+    if(startswith(buf, "alias ")){
+      definealias(buf + 6);
+      continue;
+    }
+    expandalias(buf);
+    if(strcmp(buf, "history") == 0){
+      printhistory();
+      continue;
+    }
     if(buf[0] == 'c' && buf[1] == 'd' && buf[2] == ' '){
       // Chdir must be called by the parent, not the child.
-      buf[strlen(buf)-1] = 0;  // chop \n
       if(chdir(buf+3) < 0)
         printf(2, "cannot cd %s\n", buf+3);
       continue;
