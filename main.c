@@ -26,6 +26,7 @@ main(void)
   ioapicinit();    // another interrupt controller
   consoleinit();   // console hardware
   uartinit();      // serial port
+  cprintf("Group members: Mani Kermani, Shahrad Kiani, Ashkan Ahmadi\n");
   pinit();         // process table
   tvinit();        // trap vectors
   binit();         // buffer cache
