@@ -29,3 +29,13 @@ SYSCALL(getpid)
 SYSCALL(sbrk)
 SYSCALL(sleep)
 SYSCALL(uptime)
+
+.globl simple_arithmetic_syscall
+simple_arithmetic_syscall:
+  pushl %ebx
+  movl 8(%esp), %ebx
+  movl 12(%esp), %ecx
+  movl $SYS_simple_arithmetic_syscall, %eax
+  int $T_SYSCALL
+  popl %ebx
+  ret
