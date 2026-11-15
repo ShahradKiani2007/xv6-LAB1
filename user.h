@@ -24,6 +24,7 @@ char* sbrk(int);
 int sleep(int);
 int uptime(void);
 int simple_arithmetic_syscall(int, int);
+int mprotect(void*, int, int);
 
 // ulib.c
 int stat(const char*, struct stat*);

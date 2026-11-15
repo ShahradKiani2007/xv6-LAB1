@@ -6,6 +6,7 @@
 #include "memlayout.h"
 #include "mmu.h"
 #include "proc.h"
+#include "fcntl.h"
 
 int
 sys_fork(void)
@@ -98,4 +99,20 @@ int sys_simple_arithmetic_syscall(void)
 
   cprintf("Calc: (%d+%d)*(%d-%d) = %d\n", a, b, a, b, r);
   return r;
+}
+
+int sys_mprotect(void)
+{
+  int addr, len, prot;
+  struct proc *curproc = myproc();
+
+  if(argint(0, &addr) < 0 || argint(1, &len) < 0 || argint(2, &prot) < 0)
+    return -1;
+  if(addr < 0 || addr % PGSIZE != 0 || len <= 0)
+    return -1;
+  if(prot != PROT_READ && prot != (PROT_READ | PROT_WRITE))
+    return -1;
+  if(addr >= curproc->sz || len > curproc->sz - addr)
+    return -1;
+  return protectuvm(curproc->pgdir, addr, PGROUNDUP(len), prot & PROT_WRITE);
 }

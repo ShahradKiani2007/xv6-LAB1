@@ -310,6 +310,27 @@ clearpteu(pde_t *pgdir, char *uva)
   *pte &= ~PTE_U;
 }
 
+int protectuvm(pde_t *pgdir, uint addr, uint len, int write)
+{
+  uint a;
+  pte_t *pte;
+
+  for(a = addr; a < addr + len; a += PGSIZE){
+    pte = walkpgdir(pgdir, (char*)a, 0);
+    if(pte == 0 || !(*pte & PTE_P) || !(*pte & PTE_U))
+      return -1;
+  }
+  for(a = addr; a < addr + len; a += PGSIZE){
+    pte = walkpgdir(pgdir, (char*)a, 0);
+    if(write)
+      *pte |= PTE_W;
+    else
+      *pte &= ~PTE_W;
+  }
+  lcr3(V2P(pgdir));
+  return 0;
+}
+
 // Given a parent process's page table, create a copy
 // of it for a child.
 pde_t*
