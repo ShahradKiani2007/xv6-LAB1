@@ -31,6 +31,7 @@ SYSCALL(sleep)
 SYSCALL(uptime)
 SYSCALL(mprotect)
 SYSCALL(waitpid)
+SYSCALL(symlink)
 
 .globl simple_arithmetic_syscall
 simple_arithmetic_syscall:

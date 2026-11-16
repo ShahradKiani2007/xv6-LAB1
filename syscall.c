@@ -106,6 +106,7 @@ extern int sys_uptime(void);
 extern int sys_simple_arithmetic_syscall(void);
 extern int sys_mprotect(void);
 extern int sys_waitpid(void);
+extern int sys_symlink(void);
 
 static int (*syscalls[])(void) = {
 [SYS_fork]    sys_fork,
@@ -132,6 +133,7 @@ static int (*syscalls[])(void) = {
 [SYS_simple_arithmetic_syscall] sys_simple_arithmetic_syscall,
 [SYS_mprotect] sys_mprotect,
 [SYS_waitpid] sys_waitpid,
+[SYS_symlink] sys_symlink,
 };
 
 void
