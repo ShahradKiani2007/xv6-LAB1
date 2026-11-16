@@ -184,6 +184,7 @@ UPROGS=\
 	_getpid_test\
 	_arith_test\
 	_mprotect_test\
+	_waitpid_test\
 
 fs.img: mkfs README $(UPROGS)
 	./mkfs fs.img README $(UPROGS)

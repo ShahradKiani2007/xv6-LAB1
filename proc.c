@@ -272,8 +272,13 @@ exit(void)
 int
 wait(void)
 {
+  return waitpid(-1);
+}
+
+int waitpid(int pid)
+{
   struct proc *p;
-  int havekids, pid;
+  int havekids, cpid;
   struct proc *curproc = myproc();
   
   acquire(&ptable.lock);
@@ -281,12 +286,12 @@ wait(void)
     // Scan through table looking for exited children.
     havekids = 0;
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-      if(p->parent != curproc)
+      if(p->parent != curproc || (pid != -1 && p->pid != pid))
         continue;
       havekids = 1;
       if(p->state == ZOMBIE){
         // Found one.
-        pid = p->pid;
+        cpid = p->pid;
         kfree(p->kstack);
         p->kstack = 0;
         freevm(p->pgdir);
@@ -296,7 +301,7 @@ wait(void)
         p->killed = 0;
         p->state = UNUSED;
         release(&ptable.lock);
-        return pid;
+        return cpid;
       }
     }
 

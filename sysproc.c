@@ -116,3 +116,12 @@ int sys_mprotect(void)
     return -1;
   return protectuvm(curproc->pgdir, addr, PGROUNDUP(len), prot & PROT_WRITE);
 }
+
+int sys_waitpid(void)
+{
+  int pid;
+
+  if(argint(0, &pid) < 0)
+    return -1;
+  return waitpid(pid);
+}
