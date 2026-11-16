@@ -186,6 +186,7 @@ UPROGS=\
 	_mprotect_test\
 	_waitpid_test\
 	_symlink_test\
+	_ancestors_test\
 
 fs.img: mkfs README $(UPROGS)
 	./mkfs fs.img README $(UPROGS)

@@ -125,3 +125,12 @@ int sys_waitpid(void)
     return -1;
   return waitpid(pid);
 }
+
+int sys_get_ancestors(void)
+{
+  int pid;
+
+  if(argint(0, &pid) < 0)
+    return -1;
+  return get_ancestors(pid);
+}

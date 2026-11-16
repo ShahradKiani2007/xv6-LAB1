@@ -107,6 +107,7 @@ extern int sys_simple_arithmetic_syscall(void);
 extern int sys_mprotect(void);
 extern int sys_waitpid(void);
 extern int sys_symlink(void);
+extern int sys_get_ancestors(void);
 
 static int (*syscalls[])(void) = {
 [SYS_fork]    sys_fork,
@@ -134,6 +135,7 @@ static int (*syscalls[])(void) = {
 [SYS_mprotect] sys_mprotect,
 [SYS_waitpid] sys_waitpid,
 [SYS_symlink] sys_symlink,
+[SYS_get_ancestors] sys_get_ancestors,
 };
 
 void

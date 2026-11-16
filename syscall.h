@@ -24,3 +24,4 @@
 #define SYS_mprotect 23
 #define SYS_waitpid 24
 #define SYS_symlink 25
+#define SYS_get_ancestors 26

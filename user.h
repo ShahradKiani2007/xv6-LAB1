@@ -27,6 +27,7 @@ int simple_arithmetic_syscall(int, int);
 int mprotect(void*, int, int);
 int waitpid(int);
 int symlink(const char*, const char*);
+int get_ancestors(int);
 
 // ulib.c
 int stat(const char*, struct stat*);

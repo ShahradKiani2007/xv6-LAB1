@@ -501,6 +501,49 @@ kill(int pid)
   return -1;
 }
 
+int get_ancestors(int pid)
+{
+  struct proc *p = 0;
+  struct proc *q;
+  int ids[NPROC];
+  int n = 0;
+  int i;
+
+  acquire(&ptable.lock);
+  for(q = ptable.proc; q < &ptable.proc[NPROC]; q++){
+    if(q->state != UNUSED && q->pid == pid)
+      p = q;
+  }
+  while(p != 0 && n < NPROC){
+    ids[n] = p->pid;
+    n++;
+    if(p->pid == 1)
+      break;
+    p = p->parent;
+  }
+  release(&ptable.lock);
+
+  if(n == 0 || ids[n-1] != 1)
+    return -1;
+  if(n == 1){
+    cprintf("PID 1 (init) has no ancestors\n");
+    return 0;
+  }
+  cprintf("PID %d", ids[0]);
+  for(i = 1; i < n; i++){
+    if(ids[i] == 1)
+      cprintf(" -> Init 1");
+    else if(i == 1)
+      cprintf(" -> Parent %d", ids[i]);
+    else if(i == 2)
+      cprintf(" -> Grandparent %d", ids[i]);
+    else
+      cprintf(" -> Ancestor %d", ids[i]);
+  }
+  cprintf("\n");
+  return 0;
+}
+
 //PAGEBREAK: 36
 // Print a process listing to console.  For debugging.
 // Runs when user types ^P on console.
